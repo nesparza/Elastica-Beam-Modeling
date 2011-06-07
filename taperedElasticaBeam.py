@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from __future__ import print_function
+#from __future__ import print_function
 import scipy as sp
 from scipy.integrate import odeint
 from scipy.integrate import quad
@@ -156,15 +156,26 @@ class taperedElasticaBeam:
     methods for reporting beam profile and information
     '''
     def printParameters(self, fOut):
-        print('-' * 50,file=fOut)
-        print('beam modulus      =', self.E,file=fOut)
-        print('beam thickness    =', self.t * 1e6,file=fOut)
-        print('beam width        =', self.w * 1e6,file=fOut)
-        print('moment of inertia =', self.I,file=fOut)
-        print('beam length       =', self.L * 1e6,file=fOut)
-        print('taper length      =', self.Lt * 1e6,file=fOut)
-        print('grid points       =', self.numPoints,file=fOut)
-        print('-' * 50,file=fOut)
+#===============================================================================
+#         print('-' * 50,file=fOut)
+#         print('beam modulus      =', self.E,file=fOut)
+#         print('beam thickness    =', self.t * 1e6,file=fOut)
+#         print('beam width        =', self.w * 1e6,file=fOut)
+#         print('moment of inertia =', self.I,file=fOut)
+#         print('beam length       =', self.L * 1e6,file=fOut)
+#         print('taper length      =', self.Lt * 1e6,file=fOut)
+#         print('grid points       =', self.numPoints,file=fOut)
+#===============================================================================
+        print('-' * 50)
+        print('-' * 50)
+        print('beam modulus      =', self.E)
+        print('beam thickness    =', self.t * 1e6)
+        print('beam width        =', self.w * 1e6)
+        print('moment of inertia =', self.I)
+        print('beam length       =', self.L * 1e6)
+        print('taper length      =', self.Lt * 1e6)
+        print('grid points       =', self.numPoints)
+        print('-' * 50)
 
     def calculateStrainEnergy(self):
         # make arrays of len numpoints for moment and curvature
@@ -243,12 +254,20 @@ class taperedElasticaBeam:
         self.debug = debug
 
     def printResults(self,file):
-        print('-' * 50,file=file)
-        print('x displacement    =', self.xL, file=file)
-        print('y displacement    =', self.yL, file=file)
-        print('final angle       =', self.slope[-1], file=file)
-        print('shear load        =', self.shearLoad, file=file)
-        print('axial load        =', self.axialLoad, file=file)
+#===============================================================================
+#         print('-' * 50,file=file)
+#         print('x displacement    =', self.xL, file=file)
+#         print('y displacement    =', self.yL, file=file)
+#         print('final angle       =', self.slope[-1], file=file)
+#         print('shear load        =', self.shearLoad, file=file)
+#         print('axial load        =', self.axialLoad, file=file)
+#===============================================================================
+        print('-' * 50)
+        print('x displacement    =', self.xL)
+        print('y displacement    =', self.yL)
+        print('final angle       =', self.slope[-1])
+        print('shear load        =', self.shearLoad)
+        print('axial load        =', self.axialLoad)
 
     def calculateSpringConstant(self, load):
         beam.applyShearLoad(load)
