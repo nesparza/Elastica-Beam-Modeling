@@ -35,6 +35,9 @@ class taperedElasticaBeam:
     shearLoad = 0.0     # transverse load on beam (Newtons)
     axialLoad = 0.0     # axial load on beam (Newtons) negative for compressive
     endAngle  = 0.0     # angle constraint for end of beam (radians)
+    
+    # flag for using endAngle condition
+    useEndAngle = False
 
     def __init__(self):
         pass
@@ -58,6 +61,9 @@ class taperedElasticaBeam:
 
     def setEndAngle(self, endAngle):
         self.endAngle = endAngle
+    
+    def constrainEndAngle(self):
+        self.useEndAngle = True
 
     def calculateSlopeFunction(self):
         # starting guess for initial curvature of beam
@@ -94,7 +100,7 @@ class taperedElasticaBeam:
 
         # depending on the inputs (load, endAngle), we choose
         # the convergence criterion for the fsolve function
-        if (self.endAngle != 0):
+        if (self.endAngle != 0) or (self.useEndAngle == True):
             # if endAngle is specified use end slope as boundary condition
             return self.endAngle - self.slope[-1]
         else:
@@ -213,6 +219,7 @@ class taperedElasticaBeam:
         ax.plot(scale*self.x, scale*self.y, label=legendLabel)
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
+        ax.set_aspect('equal')
 
     def plotSlope(self, ax, legendLabel):
         scale = 1e6
@@ -270,10 +277,10 @@ class taperedElasticaBeam:
         print('axial load        =', self.axialLoad)
 
     def calculateSpringConstant(self, load):
-        beam.applyShearLoad(load)
-        beam.calculateSlopeFunction()
-        beam.calculateDisplacements()
-        beam.springConstant = load / beam.yTipDisplacement()
+        self.applyShearLoad(load)
+        self.calculateSlopeFunction()
+        self.calculateDisplacements()
+        self.springConstant = load / self.yTipDisplacement()
 
     '''
     deprecated function calls
