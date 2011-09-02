@@ -7,6 +7,7 @@ Created on Mon Jun 06 23:11:36 2011
 
 from __future__ import print_function
 from scipy.signal import cspline1d, cspline1d_eval
+from scipy.optimize import fsolve,newton
 import matplotlib.pyplot as mpl
 import numpy as np
 import sys
@@ -49,100 +50,152 @@ def setLoads(beam, angle, force):
     beam.setAxialLoad(axialLoad=normal)
     beam.setShearLoad(shearLoad=shear)
 
-def dispSearch(beam,goal,tol,right=0,left=0):
-    # solve psi(s) function
+def evalTipError(load,beam,goal):
+    beam.setEndAngle(0)
+    beam.constrainEndAngle()
+    beam.setShearLoad(load)
     beam.calculateSlopeFunction()
-
-    # convert psi(s) to cartesian
     beam.calculateDisplacements()
+    return beam.yTipDisplacement() - goal
+    
+def dispSearch(beam,initLoad,goal,tol,right=0,left=0):
+    
+    myLoad = fsolve(evalTipError,initLoad,args=(beam,goal))
+    # apply fsolve solution
+    beam.setShearLoad(myLoad)
+    beam.calculateSlopeFunction()
+    beam.calculateDisplacements()
+#    print ('Desired: %s, Actual: %s, returnForce: %s, actual load: %s' % (goal*scale,beam.yTipDisplacement()*scale,myLoad,beam.shearLoad))
+ 
 
-    if (beam.yTipDisplacement() <= goal+tol and beam.yTipDisplacement() >= goal-tol):
-        return
-    else:
-        if beam.yTipDisplacement() > goal:
-            # found upper value
-            right = beam.shearLoad        
-        else:
-            # found lower value
-            left = beam.shearLoad
-        if right == 0:
-            beam.setShearLoad(2*beam.shearLoad)
-        else:
-            beam.setShearLoad((right-left)/2+left)
-        dispSearch(beam,goal,tol,right,left)
+def evalBeams(arrBeams,guessShearLoad,spc,debugFlag = False):
+    
+    lastBeam = arrBeams[-1]
+    arrStrainEnergy = np.zeros(np.size(arrBeams))
+    arrSurfEnergy = np.zeros(np.size(arrBeams))
+    lastIndex = np.size(arrBeams)
+    maxSurfEnergy = -gamma * lastBeam.w*(lastBeam.Lt - lastBeam.L)
+    
+    for j,beam in enumerate(arrBeams):
+        if debugFlag:
+            print('Beam Length: %f of %f'%(beam.L*scale,beam.Lt*scale))
+        
+        dispSearch(beam=beam,initLoad = guessShearLoad,goal=spc/2/scale,tol=1e-7,right=0,left=0)
+        guessShearLoad = beam.shearLoad
+        
+        if debugFlag:
+            print('Solved Beam -- TipDisp: %s Goal: %s Force: %s' % (beam.yTipDisplacement()*scale,spc/2,beam.shearLoad))
+        
+        arrStrainEnergy[j] = beam.calculateStrainEnergy()
+        arrSurfEnergy[j] = -gamma * beam.w *(beam.Lt - beam.L)
+        if arrStrainEnergy[j] >= np.abs(maxSurfEnergy): 
+            # since there is more bending energy than surface energy stop computing 
+            print('Super stiff beam')
+            lastIndex = j
+            break
+    
+    if lastIndex > 0:   # This ensures that we have more than one data point before trying to interpolate
+        interpLens = np.linspace(arrBeamLens[0],arrBeamLens[lastIndex-1],num=100,endpoint=True) # Generate x values for which to interpolate
+        csFit = cspline1d((arrStrainEnergy[0:lastIndex]+arrSurfEnergy[0:lastIndex]))    # Generate cubic spline fit to the sub dataset
+        interpTotalEnergy = cspline1d_eval(csFit,interpLens,dx=(arrBeamLens[1]-arrBeamLens[0]), x0 = arrBeamLens[0])    # Generate the interpolated values from the fit and x points
+        finalLen = interpLens[interpTotalEnergy.argmin()]   # find the minimum of the energy balance and grab index to choose the appropriate length
+        
+        if debugFlag:
+            print('beamLens shape: %s arrStrain: %s'%(arrBeamLens[0:lastIndex].shape,arrStrainEnergy[0:lastIndex].shape))
+            mpl.figure()
+            mpl.hold(True)
+            mpl.plot(arrBeamLens[0:lastIndex]*scale,arrStrainEnergy[0:lastIndex]*scale)
+            mpl.plot(arrBeamLens[0:lastIndex]*scale,arrSurfEnergy[0:lastIndex]*scale)
+            mpl.plot(interpLens*scale,interpTotalEnergy*scale,arrBeamLens[0:lastIndex]*scale,(arrStrainEnergy+arrSurfEnergy)[0:lastIndex]*scale,'o')
+    else:   # since there is only one datapoint then use that as the value
+        finalLen = arrBeamLens[lastIndex]
+    
+    
+    
+    return finalLen
 
 
 #fig, ax = initFig()
 #fig2, ax2 = initFig()
 
-force = 1e-6                            #test load in micronewtons
+force = 1e-9                            #test load in micronewtons
 scale = 1e6
-gamma = 50e-3
-aspectRatios = np.linspace(0.05,0.50,num = 30, endpoint = True)
-#taperRatios = np.array([0.25,0.3])
+gamma = 200e-3
+baseWidth = 20
+spacing = (20.0,30.0)#,40.0)
+aspectRatios = np.linspace(0.05,0.50,num = 3, endpoint = True)
+#aspectRatios = np.array([0.05])
+
 freeLenRatio = np.ones(aspectRatios.shape)
 
 for i,aspect in enumerate(aspectRatios):
     print('Running aspect = %f' % aspect)
-    taperLen = 20/aspect/scale
-    if i>0:
-        lower = freeLenRatio[i-1] - freeLenRatio[i-1]*0.4
-        upper = freeLenRatio[i-1] + freeLenRatio[i-1]*0.4
-        if lower < 0.2:
-            lower = 0.2
-        if upper > 0.99:
-            upper = 0.99
-    else:
-        lower = 0.2
-        upper = 0.99
+    taperLen = baseWidth/aspect/scale
+
+    lower = 0.1
+    upper = 0.99
     
-#    if taperLen*scale > 200:
-#        beamHt = 200/scale
-#    else:
-#        beamHt = taperLen
     beamHt = taperLen
-    arrBeamLens = np.linspace(lower*beamHt,upper*beamHt,num = 10, endpoint = True)
-    arrStrainEnergy = np.zeros(arrBeamLens.shape)
-    arrSurfEnergy = np.zeros(arrBeamLens.shape)
+    arrBeamLens = np.linspace(lower*beamHt,upper*beamHt,num = 30, endpoint = True)
+    arrBeamLens = arrBeamLens[::-1]
+    
     beams = []
     
     for length in arrBeamLens:
         beams.append(initBeam(L=length,Lt = taperLen))
-
-    spacing = (20.0,)    
+    
     spcFreeLen = []
-    guessShearLoad = 1e-6
+    
     for spc in spacing:
-        for j,beam in enumerate(beams):
-            beam.setEndAngle(0)
-            beam.constrainEndAngle()
-            beam.setShearLoad(guessShearLoad)
-            dispSearch(beam=beam,goal=spc/2/scale,tol=1e-8,right=0,left=0)
-            guessShearLoad = beam.shearLoad
-            # plot beam position
-    #        beam.plotBeam(ax,legendLabel = str(beam.L))
-    #        beam.plotSlope(ax2,legendLabel = str(beam.L))
-            arrStrainEnergy[j] = beam.calculateStrainEnergy()
-            arrSurfEnergy[j] = -gamma * beam.w *(beam.Lt - beam.L)
-        
-        interpLens = np.linspace(arrBeamLens[0],arrBeamLens[-1],num=100,endpoint=True)
-        csFit = cspline1d((arrStrainEnergy+arrSurfEnergy))
-        interpTotalEnergy = cspline1d_eval(csFit,interpLens,dx=(arrBeamLens[1]-arrBeamLens[0]), x0 = arrBeamLens[0])
-        
-    #    mpl.figure()
-    #    mpl.hold(True)
-    #    mpl.plot(arrBeamLens*scale,arrStrainEnergy*scale)
-    #    mpl.plot(arrBeamLens*scale,arrSurfEnergy*scale)
-    #    mpl.plot(interpLens*scale,interpTotalEnergy*scale,arrBeamLens*scale,(arrStrainEnergy+arrSurfEnergy)*scale,'o')
-        
-        resultLen = interpLens[interpTotalEnergy.argmin()]
+        resultLen = evalBeams(beams,force,spc,debugFlag = True)    
         freeLenRatio[i]= resultLen/beamHt
         print('Free Ratio: %f' % (resultLen/beamHt))
         print('equil length: %f microns of %f\n' % (resultLen*scale,beamHt*scale))
-    spcFreeLen.append(freeLenRatio)
+        spcFreeLen.append(freeLenRatio)
+    
 mpl.figure()
-mpl.hold()
+mpl.hold(True)
 for freeLen in spcFreeLen:
     mpl.plot(aspectRatios,freeLen)
 mpl.xlabel('$\\alpha$')
 mpl.ylabel('a\L')
+
+
+#    if i>0:
+#        lower = freeLenRatio[i-1] - freeLenRatio[i-1]*0.4
+#        upper = freeLenRatio[i-1] + freeLenRatio[i-1]*0.4
+#        if lower < 0.2:
+#            lower = 0.2
+#        if upper > 0.99:
+#            upper = 0.99
+#    else:
+#        lower = 0.2
+#        upper = 0.99
+
+#def dispSearch(beam,initLoad,goal,tol,right=0,left=0):
+#    # set boundary conditions    
+#    beam.setEndAngle(0)
+#    beam.constrainEndAngle()
+#    beam.setShearLoad(initLoad)
+#    # solve psi(s) function
+#    beam.calculateSlopeFunction()
+#    # convert psi(s) to cartesian
+#    beam.calculateDisplacements()
+#    
+#    if (beam.yTipDisplacement() <= goal+tol and beam.yTipDisplacement() >= goal-tol):
+#        return
+#    else:
+#
+#        if beam.yTipDisplacement() > goal:
+#            # found upper value
+#            right = beam.shearLoad        
+#        else:
+#            # found lower value
+#            left = beam.shearLoad
+#        
+#        if right < left:
+#            initLoad = 2*beam.shearLoad
+#        else:
+#            initLoad = (right-left)/2+left
+#            
+#        return dispSearch(beam,initLoad,goal,tol,right,left)
