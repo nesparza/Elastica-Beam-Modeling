@@ -7,19 +7,19 @@ Created on Mon Jun 06 23:11:36 2011
 
 from __future__ import print_function
 from scipy.signal import cspline1d, cspline1d_eval
-from scipy.optimize import fsolve,newton
+from scipy.optimize import fsolve
 import matplotlib.pyplot as mpl
 import numpy as np
-import sys
+import sys, pickle
 sys.path.append('../../')
 import taperedElasticaBeam as teb
 
 ##################################################################
 # creates a beam and sets its properties (angle not included)
-def initBeam(L,Lt):
+def initBeam(L,Lt,w,t):
     E = 1.75e6           # elastic modulus of beam (Pa)
-    t = 20e-6            # dimension of beam in bending direction (m)
-    w = 20e-6            # width of beam (m)
+#    t = 20e-6            # dimension of beam in bending direction (m)
+#    w = 20e-6            # width of beam (m)
 #    L = 75e-5            # length of beam (m)
 #    Lt = 80e-6           # length of taper (m) at Lt beam has zero thickness
     beam=teb.taperedElasticaBeam()
@@ -75,6 +75,7 @@ def evalBeams(arrBeams,guessShearLoad,spc,debugFlag = False):
     arrSurfEnergy = np.zeros(np.size(arrBeams))
     lastIndex = np.size(arrBeams)
     maxSurfEnergy = -gamma * lastBeam.w*(lastBeam.Lt - lastBeam.L)
+    arrResults = np.array([])
     
     for j,beam in enumerate(arrBeams):
         if debugFlag:
@@ -107,12 +108,14 @@ def evalBeams(arrBeams,guessShearLoad,spc,debugFlag = False):
             mpl.plot(arrBeamLens[0:lastIndex]*scale,arrStrainEnergy[0:lastIndex]*scale)
             mpl.plot(arrBeamLens[0:lastIndex]*scale,arrSurfEnergy[0:lastIndex]*scale)
             mpl.plot(interpLens*scale,interpTotalEnergy*scale,arrBeamLens[0:lastIndex]*scale,(arrStrainEnergy+arrSurfEnergy)[0:lastIndex]*scale,'o')
+        arrResults = np.array([arrBeamLens[0:lastIndex],arrStrainEnergy[0:lastIndex]])
     else:   # since there is only one datapoint then use that as the value
         finalLen = arrBeamLens[lastIndex]
+        arrResults = np.array([arrBeamLens[lastIndex],arrStrainEnergy[lastIndex]])
     
     
     
-    return finalLen
+    return (finalLen,arrResults)
 
 
 #fig, ax = initFig()
@@ -121,12 +124,19 @@ def evalBeams(arrBeams,guessShearLoad,spc,debugFlag = False):
 force = 1e-9                            #test load in micronewtons
 scale = 1e6
 gamma = 200e-3
-baseWidth = 20
-spacing = (20.0,30.0)#,40.0)
-aspectRatios = np.linspace(0.05,0.50,num = 3, endpoint = True)
+baseWidth = 40
+t = 100
+spacing = (30.0,40.0,50.0,60.0)
+aspectRatios = np.linspace(0.05,0.50,num = 30, endpoint = True)
+freeLenRatio = np.ones(aspectRatios.shape)
+
 #aspectRatios = np.array([0.05])
 
-freeLenRatio = np.ones(aspectRatios.shape)
+outputFile = 'clumpingdata.pkl'
+output = open(outputFile, 'wb')
+
+data = {'keyField': 'Aspect',
+        'parameters': [('gamma',gamma),('baseWidth',baseWidth),('thickness',t)]}
 
 for i,aspect in enumerate(aspectRatios):
     print('Running aspect = %f' % aspect)
@@ -136,22 +146,26 @@ for i,aspect in enumerate(aspectRatios):
     upper = 0.99
     
     beamHt = taperLen
-    arrBeamLens = np.linspace(lower*beamHt,upper*beamHt,num = 30, endpoint = True)
+    arrBeamLens = np.linspace(lower*beamHt,upper*beamHt,num = 60, endpoint = True)
     arrBeamLens = arrBeamLens[::-1]
     
     beams = []
     
     for length in arrBeamLens:
-        beams.append(initBeam(L=length,Lt = taperLen))
+        beams.append(initBeam(L=length,Lt = taperLen,w=baseWidth/scale,t=t/scale))
     
     spcFreeLen = []
     
+    subDict = {'keyField':'Spacing'}
     for spc in spacing:
-        resultLen = evalBeams(beams,force,spc,debugFlag = True)    
+        arrTemp = np.array([])
+        resultLen,arrTemp = evalBeams(beams,force,spc,debugFlag = False)    
         freeLenRatio[i]= resultLen/beamHt
         print('Free Ratio: %f' % (resultLen/beamHt))
         print('equil length: %f microns of %f\n' % (resultLen*scale,beamHt*scale))
         spcFreeLen.append(freeLenRatio)
+        subDict[spc] = arrTemp
+    data[aspect] = subDict
     
 mpl.figure()
 mpl.hold(True)
@@ -160,6 +174,8 @@ for freeLen in spcFreeLen:
 mpl.xlabel('$\\alpha$')
 mpl.ylabel('a\L')
 
+pickle.dump(data,output)
+output.close()
 
 #    if i>0:
 #        lower = freeLenRatio[i-1] - freeLenRatio[i-1]*0.4
